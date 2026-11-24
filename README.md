@@ -70,7 +70,49 @@ Settings > General has a switch to start Hive with Windows.
 - Optional alert when an account passes a usage percent you pick, and a daily summary.
 - A limit log (`limits.jsonl`) of each time an account passes 80, 95 and 100 percent.
 - Context alarm: a card when a chat passes 250k and 300k tokens.
-- Optional notes vault, worker inbox and job queue for people who run many Claude Code chats. Their folders default to `hive-control` next to the exe. Set `HIVE_MEMORY_DIR`, `HIVE_INBOX_DIR` or `HIVE_QUEUE_DIR` to move them, and `HIVE_PROJECT_ROOTS` (folders separated by `;`) to tell the notes vault where your projects live.
+- Optional worker inbox and job queue for people who run many Claude Code chats. Their folders default to `hive-control` next to the exe. Set `HIVE_INBOX_DIR` or `HIVE_QUEUE_DIR` to move them.
+- Shared memory for all your chats, described next.
+
+## Shared memory (optional)
+
+Hive can keep one folder of plain Markdown notes that every Claude Code and Codex chat on the PC can use, in every account. When a chat learns something a later chat will need (a decision and its reason, a gotcha, a handoff), it writes a short note. The next chat, in any account, starts with a one-line-per-note index and opens only the notes it needs. Nothing here calls an AI model, and nothing leaves your disk. The folder is an ordinary vault you can also open in Obsidian.
+
+### Turn it on
+
+1. Create the folder `Documents\Hive Memory`, or another folder named in the `HIVE_MEMORY_DIR` environment variable. Hive does nothing with memory until that folder exists.
+2. Add two hooks to Claude Code's `settings.json`, next to the alert hooks:
+
+   ```json
+   "SessionStart": [{ "hooks": [{ "type": "command", "command": "\"C:/path/to/Hive.exe\" --memory start" }] }],
+   "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "\"C:/path/to/Hive.exe\" --memory prompt" }] }]
+   ```
+
+3. Tell your chats how to write notes, for example in your global `CLAUDE.md`: one fact per file, a `description:` line in the front matter, and the folders below.
+
+### Folders
+
+- `projects\<project>\<note>.md`: notes for one project. Hive rebuilds each folder's `INDEX.md` from the `description:` lines, newest first, so leave the index alone.
+- `shared\<note>.md`: notes that apply to every project.
+- `working\<project>\<list>.md`: to-do lists. A new chat sees the names of the most recent ones.
+- `projects\<project>\digest\`: the daily history Hive collects on its own.
+
+A project is the first folder inside `%USERPROFILE%\dev`, `%USERPROFILE%\Games`, `%USERPROFILE%\.claude\tools` or any folder listed in `HIVE_PROJECT_ROOTS` (separated by `;`). Anywhere else, it is the chat's git repository.
+
+### What runs on its own
+
+- At the start of a chat, `--memory start` prints the project's index and the shared index, about 1,000 tokens at most. A resumed chat does not get it twice.
+- When a chat gets long, `--memory prompt` adds one line, at most three times per chat, asking it to save its notes before the context is compacted.
+- Every 30 minutes the tray appends to each project's digest: Claude Desktop's own summary of each chat, pending work from Claude's summaries of long chats, the last reply of each Codex thread, and new handoff files. Once a day it commits the vault to a local git repository, if git is installed.
+- Every output and file has a size cap, and the vault stops growing at 300 MB.
+
+### Commands
+
+- Search with `Hive.exe --memory search <words>` to get the 10 best matching lines, plus the descriptions of notes they link to with `[[note name]]`.
+- `--memory links <note>` lists what a note links to and what links to it.
+- To find stale notes, run `--memory check [days]`. It reports old notes, broken links, missing paths and likely duplicates, and changes nothing.
+- `--memory harvest` and `--memory index` collect history or rebuild the indexes right away.
+
+The dashboard's Memory tab shows the vault.
 
 ## How it works
 
