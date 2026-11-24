@@ -21,10 +21,22 @@ use serde::{Deserialize, Serialize};
 
 // ---- prices -----------------------------------------------------------------
 
-/// API prices per million tokens: (input, output, cache read). Cache writes cost
+/// API prices per million tokens: (input, output, cache read). Claude cache writes cost
 /// 1.25x input (5-minute) and 2x input (1-hour). From the claude-api reference,
-/// 2026-10-06; the 4.1-and-older Opus rate is from memory.
+/// 2026-10-06; the 4.1-and-older Opus rate is from memory. OpenAI rows are in `OPENAI`.
 fn price(model: &str) -> Option<(f64, f64, f64)> {
+    // OpenAI (Codex) standard tier, short context, from developers.openai.com/api/docs/pricing
+    // (platform.openai.com/docs/pricing redirects there), fetched 2026-11-24: (input, output,
+    // cached input). gpt-daybreak-blue-latest is not on that page, so it stays unpriced.
+    const OPENAI: [(&str, (f64, f64, f64)); 7] = [
+        ("gpt-6.2-astra", (8.0, 40.0, 0.40)),
+        ("gpt-6.2-sol", (2.0, 10.0, 0.10)),
+        ("gpt-6.1-sol", (2.0, 10.0, 0.10)),
+        ("gpt-6.1-terra", (1.0, 5.0, 0.05)),
+        ("gpt-6-astra", (10.0, 50.0, 1.0)),
+        ("gpt-6-sol", (2.0, 10.0, 0.20)),
+        ("gpt-6-luna", (0.10, 0.50, 0.01)),
+    ];
     const TABLE: [(&str, (f64, f64, f64)); 18] = [
         ("claude-fable-5", (10.0, 50.0, 0.25)),
         ("claude-mythos-5", (10.0, 50.0, 0.25)),
@@ -46,14 +58,16 @@ fn price(model: &str) -> Option<(f64, f64, f64)> {
         ("claude-3-5-haiku", (0.80, 4.0, 0.08)),
     ];
     // Longest matching prefix: "claude-opus-5-5" before "claude-opus-5".
-    TABLE.iter().filter(|(p, _)| model.starts_with(p)).max_by_key(|(p, _)| p.len()).map(|(_, v)| *v)
+    TABLE.iter().chain(OPENAI.iter()).filter(|(p, _)| model.starts_with(p)).max_by_key(|(p, _)| p.len()).map(|(_, v)| *v)
 }
 
 /// Dollars for these tokens on this model; None when the model has no known price.
 pub fn cost(model: &str, fast: bool, t: &Tokens) -> Option<f64> {
     let (i, o, r) = price(model)?;
     let m = 1e-6 * if fast { 2.0 } else { 1.0 };
-    Some(m * (t.input as f64 * i + t.w5 as f64 * i * 1.25 + t.w1h as f64 * i * 2.0 + t.read as f64 * r + t.output as f64 * o))
+    // OpenAI has no cache-write surcharge: a write is plain input.
+    let (w5, w1h) = if model.starts_with("gpt-") { (1.0, 1.0) } else { (1.25, 2.0) };
+    Some(m * (t.input as f64 * i + t.w5 as f64 * i * w5 + t.w1h as f64 * i * w1h + t.read as f64 * r + t.output as f64 * o))
 }
 
 /// A friendlier model name: "claude-opus-5-5" becomes "Opus 5.5".
@@ -1517,6 +1531,15 @@ mod tests {
         assert_eq!(price("claude-sonnet-4-5-20250929").unwrap().0, 3.0);
         assert_eq!(price("claude-fable-5-1").unwrap().0, 10.0);
         assert!(price("gpt-6").is_none());
+        assert!(price("gpt-daybreak-blue-latest").is_none());
+        assert_eq!(price("gpt-6.2-sol").unwrap(), (2.0, 10.0, 0.10));
+        assert_eq!(price("gpt-6-sol").unwrap().2, 0.20);
+        assert_eq!(price("gpt-6.2-astra").unwrap().0, 8.0);
+        assert_eq!(price("gpt-6-luna").unwrap().1, 0.50);
+        // Codex: 1M uncached input + 1M cached + 1M output on gpt-6.2-sol = 2 + 0.1 + 10.
+        let c = Tokens { input: 1_000_000, w5: 0, w1h: 0, read: 1_000_000, output: 1_000_000, replies: 1 };
+        assert!((cost("gpt-6.2-sol", false, &c).unwrap() - 12.1).abs() < 1e-9);
+        assert!(cost("gpt-daybreak-blue-latest", false, &c).is_none());
         let t = Tokens { input: 1_000_000, w5: 0, w1h: 1_000_000, read: 1_000_000, output: 1_000_000, replies: 1 };
         // 4 + 8 (1-hour write, 2x) + 0.2 + 20
         assert!((cost("claude-opus-5-5", false, &t).unwrap() - 32.2).abs() < 1e-9);

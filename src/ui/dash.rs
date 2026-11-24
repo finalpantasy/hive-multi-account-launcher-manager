@@ -1163,8 +1163,8 @@ impl Dash {
             return;
         }
         let note = format!(
-            "Cost is what the same tokens would cost on the API, for comparison: a plan doesn't bill per token. Codex (OpenAI) models have no price here, so they count in tokens only.{}",
-            if s.unpriced > 0 { format!(" Unpriced: {} tokens.", count(s.unpriced)) } else { String::new() }
+            "Cost is an estimate at API prices, for comparison: Claude at Anthropic's, Codex at OpenAI's. Plans don't bill per token.{}",
+            if s.unpriced > 0 { format!(" No known price (e.g. gpt-daybreak-blue-latest), tokens only: {}.", count(s.unpriced)) } else { String::new() }
         );
         p.text(&note, &p.g.tiny, R::new(x0, h - 24.0, x1, h - 6.0), t.text3, DWRITE_TEXT_ALIGNMENT_LEADING);
     }
@@ -1636,7 +1636,7 @@ impl Dash {
         ink.gem(r, 14.0, c, 0.2);
         p.text(title, &p.g.tiny, R::new(r.l + 18.0, r.t + 12.0, r.r - 16.0, r.t + 28.0), alpha(c, 0.95), DWRITE_TEXT_ALIGNMENT_LEADING);
         let m = self.metric;
-        // By cost, tokens decide among the unpriced (Codex).
+        // By cost, tokens decide among the unpriced.
         let mut rows: Vec<(&String, f64, f64)> = map.iter().map(|(k, a)| (k, value(m, a), a.tokens.total() as f64)).filter(|(_, v, tk)| *v > 0.0 || *tk > 0.0).collect();
         rows.sort_by(|a, b| b.1.total_cmp(&a.1).then(b.2.total_cmp(&a.2)));
         let total: f64 = rows.iter().map(|x| x.1).sum();
@@ -2928,7 +2928,7 @@ pub fn render_sample(scale: f32, view: usize) -> Option<(i32, i32, Vec<u8>)> {
         for (k, a) in accounts.iter().enumerate() {
             let wave = ((i as f64 * 0.7 + k as f64).sin() + 1.3) * (5 - k.min(4)) as f64;
             let t = stats::Tokens { input: 1000, w5: 0, w1h: 2_000_000, read: (wave * 40e6) as u64, output: (wave * 300e3) as u64, replies: (wave * 60.0) as u64 };
-            let cost = if a == "Codex" { 0.0 } else { wave * 110.0 };
+            let cost = if a == "Codex" { stats::cost("gpt-6.2-sol", false, &stats::Tokens { input: t.input, w5: 0, w1h: 0, read: t.read, output: t.output, replies: 0 }).unwrap_or(0.0) } else { wave * 110.0 };
             let e = s.by_day.entry(day).or_default().entry(a.clone()).or_default();
             e.tokens.add(&t);
             e.cost += cost;
@@ -2946,6 +2946,7 @@ pub fn render_sample(scale: f32, view: usize) -> Option<(i32, i32, Vec<u8>)> {
         let total = 1_000_000_000.0;
         s.by_day_family.insert(*day, [(total * opus) as u64, (total * rest * 0.62) as u64, (total * rest * 0.14) as u64, (total * rest * 0.14) as u64, (total * rest * 0.10) as u64]);
     }
+    s.unpriced = 1_250_000;
     let week: std::collections::BTreeMap<String, [u64; 5]> = [
         ("Personal", [5_200_000_000, 2_900_000_000, 90_000_000, 0, 0]),
         ("Work", [4_100_000_000, 1_300_000_000, 0, 160_000_000, 0]),
@@ -2962,7 +2963,7 @@ pub fn render_sample(scale: f32, view: usize) -> Option<(i32, i32, Vec<u8>)> {
             a.cost = work * (1.0 + ((d * 24 + hr) as f64 * 1.3).sin().abs()) * 40.0;
         }
     }
-    for (mdl, c) in [("Opus 5.5", 0.5), ("Sonnet 5.5", 0.2), ("Opus 5", 0.15), ("GPT-6.1 Sol", 0.0), ("Fable 5.1", 0.04), ("Haiku 5.5", 0.01)] {
+    for (mdl, c) in [("Opus 5.5", 0.5), ("Sonnet 5.5", 0.2), ("Opus 5", 0.15), ("GPT-6.1 Sol", 0.03), ("Fable 5.1", 0.04), ("Haiku 5.5", 0.01)] {
         s.by_model.insert(mdl.into(), Agg { tokens: stats::Tokens { input: 1, w5: 0, w1h: 0, read: 5_000_000_000, output: 0, replies: 1 }, cost: s.total.cost * c });
     }
     for (pj, c) in [("web-dashboard", 0.31), ("hive", 0.18), ("sample-game", 0.14), ("mobile-app", 0.11), ("docs-site", 0.08), ("asset-library", 0.07), ("reporting", 0.06)] {
@@ -2981,7 +2982,7 @@ pub fn render_sample(scale: f32, view: usize) -> Option<(i32, i32, Vec<u8>)> {
         Pod { name: "Work".into(), color: color_of(&accounts, "Work"), codex: false, open: true, chats: 4, busy: 0.0, five: Some(22), five_fc: Forecast::Lasts, week: Some(58), week_fc: Forecast::Lasts, as_of: today, past95: 0, last95: Some(today - 9 * 24 * hh), hours: hours(1), today: Agg { tokens: stats::Tokens::default(), cost: 288.5 } },
         Pod { name: "Side project".into(), color: color_of(&accounts, "Side project"), codex: false, open: true, chats: 14, busy: 0.3, five: None, five_fc: Forecast::Unknown, week: Some(9), week_fc: Forecast::Lasts, as_of: today - 6 * hh, past95: 0, last95: None, hours: hours(2), today: Agg { tokens: stats::Tokens::default(), cost: 96.0 } },
         Pod { name: "Freelance".into(), color: color_of(&accounts, "Freelance"), codex: false, open: true, chats: 4, busy: 0.0, five: Some(100), five_fc: Forecast::Reached, week: Some(37), week_fc: Forecast::Unknown, as_of: today, past95: 1, last95: Some(today - 26 * hh), hours: hours(3), today: Agg::default() },
-        Pod { name: "Codex".into(), color: color_of(&accounts, "Codex"), codex: true, open: false, chats: 0, busy: 0.0, five: Some(12), five_fc: Forecast::Unknown, week: Some(41), week_fc: Forecast::Unknown, as_of: 0, past95: 0, last95: None, hours: hours(4), today: Agg { tokens: stats::Tokens { input: 0, w5: 0, w1h: 0, read: 3_200_000_000, output: 23_000_000, replies: 1 }, cost: 0.0 } },
+        Pod { name: "Codex".into(), color: color_of(&accounts, "Codex"), codex: true, open: false, chats: 0, busy: 0.0, five: Some(12), five_fc: Forecast::Unknown, week: Some(41), week_fc: Forecast::Unknown, as_of: 0, past95: 0, last95: None, hours: hours(4), today: Agg { tokens: stats::Tokens { input: 0, w5: 0, w1h: 0, read: 3_200_000_000, output: 23_000_000, replies: 1 }, cost: 36.5 } },
     ];
     let d = Dash {
         hwnd: null_mut(),

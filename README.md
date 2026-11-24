@@ -20,7 +20,7 @@ Hive reads Codex's own session logs under `~/.codex/sessions`, so Codex sits in 
 
 - The Codex row shows your plan, credits, weekly usage and exact reset time. Click it to open the Codex app.
 - Codex turns that finish or need you raise the same alert cards as Claude chats.
-- Codex tokens appear in the dashboard next to Claude's. Codex models have no price in Hive, so they count in tokens only.
+- Codex tokens appear in the dashboard next to Claude's, with an estimated cost at OpenAI's API prices. A model with no published price counts in tokens only.
 - Settings > Usage can hide the Codex row, and Settings > Alerts can turn Codex alerts off.
 
 ![The usage settings tab with the Codex usage switch](docs/images/settings-usage.png)
